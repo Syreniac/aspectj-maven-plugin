@@ -25,11 +25,11 @@ package org.codehaus.mojo.aspectj;
  */
 
 import java.io.File;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Set;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.*;
 
 import org.apache.maven.model.Model;
 import org.apache.maven.plugin.MojoExecutionException;
@@ -451,4 +451,18 @@ public class AbstractAjcCompilerTest
         assertFalse(ajcCompMojo.ajcOptions.contains("-source"));
         assertFalse(ajcCompMojo.ajcOptions.contains("-target"));
     }
+
+    public void testClassPathArgumentComparisonIgnoresFullFilePath() throws IOException, MojoExecutionException {
+        ajcCompMojo.ajcOptions = new ArrayList<>();
+        ajcCompMojo.ajcOptions.add("\\path\\to\\project\\aspectj-plugin-issue-demo\\module-one\\target\\module-one-1.0-SNAPSHOT.jar;");
+        Path buildDefLocation = Files.createTempDirectory("buildDefLocation");
+        Path buildDef = Files.createFile(buildDefLocation.resolve("builddef.lst"));
+        try (FileWriter fileWriter = new FileWriter(buildDef.toFile())) {
+            fileWriter.append(".m2\\repository\\org\\example\\module-one\\1.0-SNAPSHOT\\module-one-1.0-SNAPSHOT.jar;");
+        }
+        assertFalse("Classpath style entries should be detected as different only " +
+                "if the final version has changed", ajcCompMojo.hasArgumentsChanged(buildDefLocation.toFile()));
+
+    }
+
 }

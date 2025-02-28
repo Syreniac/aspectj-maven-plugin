@@ -24,6 +24,7 @@ package org.codehaus.mojo.aspectj;
  * SOFTWARE.
  */
 
+import com.google.common.annotations.VisibleForTesting;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.DependencyResolutionRequiredException;
@@ -852,10 +853,51 @@ public abstract class AbstractAjcCompiler extends AbstractAjcMojo {
         return !FileUtils.resolveFile(outDir, argumentFileName).exists();
     }
 
-    private boolean hasArgumentsChanged(File outDir)
-            throws MojoExecutionException {
+    @VisibleForTesting
+    boolean hasArgumentsChanged(File outDir) throws MojoExecutionException {
         try {
-            return (!ajcOptions.equals(AjcHelper.readBuildConfigFile(argumentFileName, outDir)));
+            List<String> savedArgs = AjcHelper.readBuildConfigFile(argumentFileName, outDir);
+            if (ajcOptions.size() != savedArgs.size()) {
+                getLog().warn("Options and args were different sizes");
+                return true;
+            }
+            for (int i = 0; i < savedArgs.size(); i++) {
+                if(Objects.equals(savedArgs.get(i), ajcOptions.get(i))){
+                    getLog().debug("Arguments at %d were identical");
+                    continue;
+                }
+                if (savedArgs.get(i).contains(";") || ajcOptions.get(i).contains(";")) {
+                    getLog().debug("Handling semicolon separated list specially");
+                    String[] splitArgs = savedArgs.get(i).split(";");
+                    String[] splitOptions = ajcOptions.get(i).split(";");
+                    if (splitArgs.length != splitOptions.length) {
+                        getLog().debug(String.format("Argument and options differed in split length: %s vs %s",
+                                savedArgs.get(i), ajcOptions.get(i)));
+                        return true;
+                    }
+                    for (int j = 0; j < splitArgs.length; j++) {
+                        String[] splitArg = splitArgs[j].split("[\\/\\\\]");
+                        String[] splitOption = splitOptions[j].split("[\\/\\\\]");
+                        if (!Objects.equals(splitArg[splitArg.length - 1], splitOption[splitOption.length - 1])) {
+                            getLog().debug(String.format(
+                                    "Argument and options differed in final element of split " + "object: %s vs %s",
+                                    savedArgs.get(i), ajcOptions.get(i)));
+                            getLog().debug(String.format("Difference between %s and %s", splitArg[splitArg.length - 1],
+                                    splitOption[splitOption.length - 1]));
+                            return true;
+                        }
+                    }
+                } else {
+                    if (!savedArgs.get(i).equals(ajcOptions.get(i))) {
+                        getLog().debug(
+                                String.format("Arguments and options at %d differed: %s vs %s", i, savedArgs.get(i),
+                                        ajcOptions.get(i)));
+                        return true;
+                    }
+                }
+            }
+            getLog().info("All arguments matched were matched with previous run");
+            return false;
         } catch (IOException e) {
             throw new MojoExecutionException("Error during reading of previous argumentsfile ");
         }
